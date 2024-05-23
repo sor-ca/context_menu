@@ -18,7 +18,7 @@ const BIG_RECT: Rect = Rect {
     max: Pos2::new(200., 100.),
 };
 
-#[derive(Default, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Default, Debug, serde::Deserialize, serde::Serialize, Clone)]
 enum Color {
     #[default]
     Red,
@@ -43,12 +43,14 @@ fn main() -> eframe::Result<()> {
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
     state: Color,
+    label: Option<String>,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
         Self {
             state: Color::default(),
+            label: None,
         }
     }
 }
@@ -81,9 +83,43 @@ impl eframe::App for TemplateApp {
 
             painter.rect_filled(BLUE_RECT, 0., Color32::BLUE);
 
-            context_menu_custom(&r, &mut self.state, set_state, set_contents);
+            context_menu_custom_without_pub(&r, self, ui);
+
+            if let Some(label) = &self.label {
+                ui.label(label.clone());
+            }
+
+            // context_menu_custom(
+            //     &r,
+            //     &mut self.state,
+            //     set_state,
+            //     set_contents,
+            // );
         });
     }
+}
+
+fn context_menu_custom_without_pub(response: &Response, app: &mut TemplateApp, ui: &mut Ui) {
+    if response.secondary_clicked() {
+        let ctx = ui.ctx();
+        if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
+            app.state = set_state(pos);
+        }
+    }
+    let f: Box<dyn FnOnce(&mut Ui)> = match app.state {
+        Color::Red => Box::new(|ui: &mut Ui| {
+            if ui.button("add red label").clicked() {
+                app.label = Some("red label".to_owned());
+            };
+        }),
+
+        Color::Blue => Box::new(|ui: &mut Ui| {
+            if ui.button("add blue label").clicked() {
+                app.label = Some("blue label".to_owned());
+            }
+        }),
+    };
+    response.context_menu(f);
 }
 
 fn set_state(p: Pos2) -> Color {
@@ -111,47 +147,12 @@ fn set_contents(state: &Color) -> Box<dyn FnOnce(&mut Ui)> {
     }
 }
 
-pub fn context_menu_custom_example(
-    response: &Response,
-    state: &mut Color,
-) -> Option<InnerResponse<()>> {
-    let menu_id = Id::new("__egui::context_menu");
-    let mut bar_state = BarState::load(&response.ctx, menu_id);
-    let root = &mut bar_state;
-
-    let menu_response = MenuRoot::context_interaction(response, root);
-    match &menu_response {
-        egui::menu::MenuResponse::Create(p, _) => *state = set_state(*p),
-
-        _ => {}
-    };
-
-    let add_contents = match state {
-        Color::Red => |ui: &mut Ui| {
-            if ui.button("red").clicked() {
-                dbg!("red");
-            }
-        },
-        Color::Blue => |ui: &mut Ui| {
-            if ui.button("blue").clicked() {
-                dbg!("blue");
-            }
-        },
-    };
-
-    MenuRoot::handle_menu_response(root, menu_response);
-    let inner_response = bar_state.show(response, add_contents);
-
-    bar_state.store(&response.ctx, menu_id);
-    inner_response
-}
-
-pub fn context_menu_custom<T>(
+pub fn context_menu_custom<T, R>(
     response: &Response,
     state: &mut T,
     get_state: impl FnOnce(Pos2) -> T,
-    set_contents: impl Fn(&T) -> Box<dyn FnOnce(&mut Ui)>,
-) -> Option<InnerResponse<()>> {
+    set_contents: impl FnOnce(&T) -> Box<dyn FnOnce(&mut Ui) -> R>,
+) -> Option<InnerResponse<R>> {
     let menu_id = Id::new("__egui::context_menu");
     let mut bar_state = BarState::load(&response.ctx, menu_id);
     let root = &mut bar_state;
@@ -172,52 +173,3 @@ pub fn context_menu_custom<T>(
     bar_state.store(&response.ctx, menu_id);
     inner_response
 }
-
-// / Идея этой штуки и почему не подходит оригинальное меню:
-// / во время создания меню нам нужно за чтото зацепиться
-// / т.е. иметь доступ к MenuResponse и по ивенту Create создавать стейт, который потом кормить в ui
-// /
-// /
-/*pub fn draw_context_menu_on_instruments(
-    resp: Response,
-    menu_state: SchemaMenuState,
-    app: &Storage,
-) -> AppMutations {
-    let response = &resp;
-    let menu_id = Id::new("__egui::context_menu");
-    let mut bar_state = egui::menu::BarState::load(&response.ctx, menu_id);
-
-    let idd = {
-        let response = response;
-        let root = &mut bar_state;
-        //let id = response.id;
-        // id
-        let menu_response = egui::menu::MenuRoot::context_interaction(response, root);
-
-        let pp = match &menu_response {
-            egui::menu::MenuResponse::Create(_, _) => {
-                menu_state.clone().store(&response.ctx, menu_id);
-                menu_state
-            }
-            _ => SchemaMenuState::load(&response.ctx, menu_id),
-        };
-
-        egui::menu::MenuRoot::handle_menu_response(root, menu_response);
-
-        pp
-    };
-    // if idd
-    let inner_response = bar_state.show(response, |ui| schema_context_menu(ui, app, idd));
-
-    let res = match inner_response {
-        Some(x) => {
-            let mutations = x.inner;
-            mutations
-        }
-        None => AppMutations::new(),
-    };
-
-    bar_state.store(&response.ctx, menu_id);
-
-    res
-}*/
