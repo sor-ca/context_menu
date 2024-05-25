@@ -72,7 +72,7 @@ impl eframe::App for TemplateApp {
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update<'a>(&'a mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             let size = ui.available_size_before_wrap();
             let (_, painter) = ui.allocate_painter(size, Sense::click());
@@ -83,18 +83,35 @@ impl eframe::App for TemplateApp {
 
             painter.rect_filled(BLUE_RECT, 0., Color32::BLUE);
 
-            context_menu_custom_without_pub(&r, self, ui);
+            let mut label = self.label.clone();
+
+            context_menu_custom(
+                &r,
+                &mut self.state,
+                set_state,
+                |state: &Color| match state {
+                    Color::Red => Box::new(|ui: &mut Ui| {
+                        if ui.button("add red label").clicked() {
+                            label = Some("red label".to_owned());
+                        };
+                        label
+                    }),
+
+                    Color::Blue => Box::new(|ui: &mut Ui| {
+                        if ui.button("add blue label").clicked() {
+                            label = Some("blue label".to_owned());
+                            dbg!("blue label");
+                        }
+                        label
+                    }),
+                },
+            );
+
+            //context_menu_custom_without_pub(&r, self, ui);
 
             if let Some(label) = &self.label {
                 ui.label(label.clone());
             }
-
-            // context_menu_custom(
-            //     &r,
-            //     &mut self.state,
-            //     set_state,
-            //     set_contents,
-            // );
         });
     }
 }
@@ -132,22 +149,7 @@ fn set_state(p: Pos2) -> Color {
     }
 }
 
-fn set_contents(state: &Color) -> Box<dyn FnOnce(&mut Ui)> {
-    match state {
-        Color::Red => Box::new(|ui| {
-            if ui.button("red").clicked() {
-                dbg!("red");
-            }
-        }),
-        Color::Blue => Box::new(|ui| {
-            if ui.button("blue").clicked() {
-                dbg!("blue");
-            }
-        }),
-    }
-}
-
-pub fn context_menu_custom<T, R>(
+pub fn context_menu_custom<'a, T, R>(
     response: &Response,
     state: &mut T,
     get_state: impl FnOnce(Pos2) -> T,
