@@ -39,20 +39,11 @@ fn main() -> eframe::Result<()> {
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
     state: Color,
     label: Option<String>,
-}
-
-impl Default for TemplateApp {
-    fn default() -> Self {
-        Self {
-            state: Color::default(),
-            label: None,
-        }
-    }
 }
 
 impl TemplateApp {
@@ -72,7 +63,7 @@ impl eframe::App for TemplateApp {
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update<'a>(&'a mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             let size = ui.available_size_before_wrap();
             let (_, painter) = ui.allocate_painter(size, Sense::click());
@@ -83,8 +74,6 @@ impl eframe::App for TemplateApp {
 
             painter.rect_filled(BLUE_RECT, 0., Color32::BLUE);
 
-            let mut label = self.label.clone();
-
             context_menu_custom(
                 &r,
                 &mut self.state,
@@ -92,17 +81,14 @@ impl eframe::App for TemplateApp {
                 |state: &Color| match state {
                     Color::Red => Box::new(|ui: &mut Ui| {
                         if ui.button("add red label").clicked() {
-                            label = Some("red label".to_owned());
+                            self.label = Some("red label".to_owned());
                         };
-                        label
                     }),
 
                     Color::Blue => Box::new(|ui: &mut Ui| {
                         if ui.button("add blue label").clicked() {
-                            label = Some("blue label".to_owned());
-                            dbg!("blue label");
+                            self.label = Some("blue label".to_owned());
                         }
-                        label
                     }),
                 },
             );
@@ -116,6 +102,7 @@ impl eframe::App for TemplateApp {
     }
 }
 
+#[allow(dead_code)]
 fn context_menu_custom_without_pub(response: &Response, app: &mut TemplateApp, ui: &mut Ui) {
     if response.secondary_clicked() {
         let ctx = ui.ctx();
@@ -149,22 +136,23 @@ fn set_state(p: Pos2) -> Color {
     }
 }
 
-pub fn context_menu_custom<'a, T, R>(
+pub fn context_menu_custom<'a, T>(
     response: &Response,
+    //variable for fixing state in the moment when you open context menu
     state: &mut T,
+    //function which allow to get some king of state.
+    //In this case state depends on cursor position, in other cases it may depend on system time or something else
     get_state: impl FnOnce(Pos2) -> T,
-    set_contents: impl FnOnce(&T) -> Box<dyn FnOnce(&mut Ui) -> R>,
-) -> Option<InnerResponse<R>> {
+    //set contents of menu depending on state
+    set_contents: impl 'a + FnOnce(&T) -> Box<dyn 'a + FnOnce(&mut Ui)>,
+) -> Option<InnerResponse<()>> {
     let menu_id = Id::new("__egui::context_menu");
     let mut bar_state = BarState::load(&response.ctx, menu_id);
     let root = &mut bar_state;
 
     let menu_response = MenuRoot::context_interaction(response, root);
-    match &menu_response {
-        egui::menu::MenuResponse::Create(p, _) => {
-            *state = get_state(*p);
-        }
-        _ => {}
+    if let egui::menu::MenuResponse::Create(p, _) = &menu_response {
+        *state = get_state(*p);
     };
 
     let add_contents = set_contents(&state);
